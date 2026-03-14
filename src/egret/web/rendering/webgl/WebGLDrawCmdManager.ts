@@ -77,8 +77,22 @@ namespace egret.web {
 
         public drawDataLen = 0;
 
-        public constructor() {
+        /**
+         * Initial pool size for pre-allocated draw data objects.
+         * Pre-allocating reduces GC pressure on the first rendered frame.
+         */
+        private static readonly INITIAL_POOL_SIZE: number = 128;
 
+        public constructor() {
+            // Pre-allocate draw data objects to reduce first-frame GC pressure.
+            for (let i = 0; i < WebGLDrawCmdManager.INITIAL_POOL_SIZE; i++) {
+                this.drawData[i] = <IDrawData>{
+                    type: 0, count: 0, texture: null, filter: null,
+                    value: "", buffer: null, width: 0, height: 0,
+                    textureWidth: 0, textureHeight: 0, smoothing: false,
+                    x: 0, y: 0
+                };
+            }
         }
 
         /**
@@ -116,6 +130,7 @@ namespace egret.web {
                     let data = this.drawData[this.drawDataLen] || <IDrawData>{};
                     data.type = DRAWABLE_TYPE.TEXTURE;
                     data.texture = texture;
+                    data.filter = null;
                     data.count = 0;
                     this.drawData[this.drawDataLen] = data;
                     this.drawDataLen++;
@@ -292,20 +307,12 @@ namespace egret.web {
         public clear():void {
             for(let i = 0; i < this.drawDataLen; i++) {
                 let data = this.drawData[i];
-                data.type = 0;
-                data.count = 0;
+                // Null out object references to allow GC.
+                // Numeric and boolean fields are always overwritten before next
+                // use, so they do not need to be reset here.
                 data.texture = null;
                 data.filter = null;
-                //data.uv = null;
-                data.value = "";
                 data.buffer = null;
-                data.width = 0;
-                data.height = 0;
-                data.textureWidth = 0;
-                data.textureHeight = 0;
-                data.smoothing = false;
-                data.x = 0;
-                data.y = 0;
             }
 
             this.drawDataLen = 0;

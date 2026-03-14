@@ -880,6 +880,8 @@ namespace egret.web {
                 return;
             }
 
+            const stats = WebGLRenderStats.instance;
+            stats._beginBatch();
 
             const indices = this.vao.getIndices();
             const vertices = this.vao.getVertices();
@@ -919,6 +921,8 @@ namespace egret.web {
                     if (this.activatedBuffer && this.activatedBuffer.$computeDrawCall) {
                         this.activatedBuffer.$drawCalls++;
                     }
+                    // Record draw call in performance stats
+                    stats._recordDrawCall(data.count);
                 }
             }
 
@@ -926,6 +930,8 @@ namespace egret.web {
             if (this.vao.isMesh()) {
                 this.uploadIndicesArray(this.vao.getIndices());
             }
+
+            stats._endBatch();
 
             // 清空数据
             this.drawCmdManager.clear();
