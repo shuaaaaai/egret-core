@@ -69,6 +69,14 @@ namespace egret.web {
         private _verticesFloat32View: Float32Array = null;
         private _verticesUint32View: Uint32Array = null;
 
+        /**
+         * Flat pre-allocated cache for iOS14 per-triangle vertex data.
+         * Each vertex stores 4 components: [x, y, u, v].
+         * Sized to the maximum number of vertices (maxVertexCount) * 4 components.
+         * Reused across calls to avoid per-frame heap allocations.
+         */
+        private _ios14VertCache: Float32Array = null;
+
         constructor() {
             //old
             // const numVerts = this.maxVertexCount * this.vertSize;
@@ -78,6 +86,8 @@ namespace egret.web {
             this._verticesFloat32View = new Float32Array(this._vertices);
             this._verticesUint32View = new Uint32Array(this._vertices);
             this.vertices = this._verticesFloat32View;
+            // iOS14 temp buffer: maxVertexCount vertices × 4 float components (x,y,u,v)
+            this._ios14VertCache = new Float32Array(this.maxVertexCount * 4);
             //索引缓冲，最大索引数
             /*
             0-------1
@@ -216,7 +226,10 @@ namespace egret.web {
 
             if (meshVertices) {
                 if (isIOS14Device()) {
-                    let vertData = [];
+                    // Use a pre-allocated flat cache instead of creating a new
+                    // array-of-arrays on every call, avoiding per-frame GC pressure.
+                    // Layout: [x0, y0, u0, v0,  x1, y1, u1, v1, ...]  (4 floats per vertex)
+                    const vertData = this._ios14VertCache;
                     // 计算索引位置与赋值
                     const vertices = this.vertices;
                     const verticesUint32View = this._verticesUint32View;
@@ -231,50 +244,50 @@ namespace egret.web {
                         u = meshUVs[i];
                         v = meshUVs[i + 1];
 
+                        // Write into flat cache at offset = vertex_index * 4 floats.
+                        // 'i' steps through meshUVs two elements at a time, so each vertex
+                        // maps to vertex_index = i/2, and its cache start = (i/2)*4 = i*2.
+                        const cacheIdx = i * 2; // vertex_index * 4
                         if (rotated) {
-                            vertData.push([
-                                a * x + c * y + tx,
-                                b * x + d * y + ty,
-                                (sourceX + (1.0 - v) * sourceHeight) / textureSourceWidth,
-                                (sourceY + u * sourceWidth) / textureSourceHeight,
-                            ]);
+                            vertData[cacheIdx + 0] = a * x + c * y + tx;
+                            vertData[cacheIdx + 1] = b * x + d * y + ty;
+                            vertData[cacheIdx + 2] = (sourceX + (1.0 - v) * sourceHeight) / textureSourceWidth;
+                            vertData[cacheIdx + 3] = (sourceY + u * sourceWidth) / textureSourceHeight;
                         } else {
-                            vertData.push([
-                                a * x + c * y + tx,
-                                b * x + d * y + ty,
-                                (sourceX + u * sourceWidth) / textureSourceWidth,
-                                (sourceY + v * sourceHeight) / textureSourceHeight,
-                            ]);
+                            vertData[cacheIdx + 0] = a * x + c * y + tx;
+                            vertData[cacheIdx + 1] = b * x + d * y + ty;
+                            vertData[cacheIdx + 2] = (sourceX + u * sourceWidth) / textureSourceWidth;
+                            vertData[cacheIdx + 3] = (sourceY + v * sourceHeight) / textureSourceHeight;
                         }
                         verticesUint32View[iD + 4] = alpha;
                     }
                     for (let i = 0; i < meshIndices.length; i += 3) {
-                        let data0 = vertData[meshIndices[i]];
-                        vertices[index++] = data0[0];
-                        vertices[index++] = data0[1];
-                        vertices[index++] = data0[2];
-                        vertices[index++] = data0[3];
+                        const c0 = meshIndices[i] * 4;
+                        vertices[index++] = vertData[c0];
+                        vertices[index++] = vertData[c0 + 1];
+                        vertices[index++] = vertData[c0 + 2];
+                        vertices[index++] = vertData[c0 + 3];
                         verticesUint32View[index++] = alpha;
 
-                        let data1 = vertData[meshIndices[i + 1]];
-                        vertices[index++] = data1[0];
-                        vertices[index++] = data1[1];
-                        vertices[index++] = data1[2];
-                        vertices[index++] = data1[3];
+                        const c1 = meshIndices[i + 1] * 4;
+                        vertices[index++] = vertData[c1];
+                        vertices[index++] = vertData[c1 + 1];
+                        vertices[index++] = vertData[c1 + 2];
+                        vertices[index++] = vertData[c1 + 3];
                         verticesUint32View[index++] = alpha;
 
-                        let data2 = vertData[meshIndices[i + 2]];
-                        vertices[index++] = data2[0];
-                        vertices[index++] = data2[1];
-                        vertices[index++] = data2[2];
-                        vertices[index++] = data2[3];
+                        const c2 = meshIndices[i + 2] * 4;
+                        vertices[index++] = vertData[c2];
+                        vertices[index++] = vertData[c2 + 1];
+                        vertices[index++] = vertData[c2 + 2];
+                        vertices[index++] = vertData[c2 + 3];
                         verticesUint32View[index++] = alpha;
 
                         // 填充数据
-                        vertices[index++] = data2[0];
-                        vertices[index++] = data2[1];
-                        vertices[index++] = data2[2];
-                        vertices[index++] = data2[3];
+                        vertices[index++] = vertData[c2];
+                        vertices[index++] = vertData[c2 + 1];
+                        vertices[index++] = vertData[c2 + 2];
+                        vertices[index++] = vertData[c2 + 3];
                         verticesUint32View[index++] = alpha;
                     }
 
