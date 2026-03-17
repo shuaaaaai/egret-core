@@ -35,6 +35,7 @@ namespace egret {
     let DEG_TO_RAD: number = PI / 180;
 
     let matrixPool: Matrix[] = [];
+    const MATRIX_POOL_MAX_SIZE: number = 256;
     /**
      * The Matrix class represents a transformation matrix that determines how to map points from one coordinate space to
      * another. You can perform various graphical transformations on a display object by setting the properties of a Matrix
@@ -74,7 +75,9 @@ namespace egret {
             if (!matrix) {
                 return;
             }
-            matrixPool.push(matrix);
+            if (matrixPool.length < MATRIX_POOL_MAX_SIZE) {
+                matrixPool.push(matrix);
+            }
         }
 
         /**

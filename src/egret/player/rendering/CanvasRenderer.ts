@@ -1036,7 +1036,7 @@ namespace egret {
     // 判断浏览器是否支持 Uint8ClampedArray
     let use8Clamp = false;
     try {
-        use8Clamp = (typeof Uint8ClampedArray !== undefined);
+        use8Clamp = (typeof Uint8ClampedArray !== "undefined");
     } catch (e) { }
 
     function setArray(a, b, index: number = 0): void {

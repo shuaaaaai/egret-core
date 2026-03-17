@@ -40,3 +40,4 @@ src/tsc_config_temp.txt
 /target**
 test-script.js
 tsconfig.debug.json
+test/**/*.js

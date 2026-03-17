@@ -16,6 +16,8 @@
 
 // ─── Minimal type stubs so tests compile without the full egret runtime ───────
 
+declare var process: { exitCode: number };
+
 namespace egret {
     export class HashObject { public hashCode: number = 0; }
     export class Filter {}
@@ -325,7 +327,7 @@ describe("RenderObjectPool – basic obtain/release cycle", () => {
             this._maxSize = maxSize;
         }
         public obtain(): T {
-            return this._pool.length > 0 ? this._pool.pop() : this._factory();
+            return this._pool.length > 0 ? this._pool.pop()! : this._factory();
         }
         public release(obj: T): void {
             if (!obj) { return; }
@@ -381,15 +383,155 @@ describe("RenderObjectPool – null-safety", () => {
         private _pool: T[] = [];
         private _factory: () => T;
         public constructor(factory: () => T) { this._factory = factory; }
-        public obtain(): T { return this._pool.length > 0 ? this._pool.pop() : this._factory(); }
+        public obtain(): T { return this._pool.length > 0 ? this._pool.pop()! : this._factory(); }
         public release(obj: T): void { if (!obj) { return; } this._pool.push(obj); }
         public get size(): number { return this._pool.length; }
     }
     const pool = new MockPool<object>(() => ({}));
-    pool.release(null);
+    pool.release(null as any);
     assert(pool.size === 0, "Releasing null is a no-op");
     pool.release(undefined as any);
     assert(pool.size === 0, "Releasing undefined is a no-op");
+});
+
+// ─── Tests for typeof fix in CanvasRenderer ──────────────────────────────────
+
+describe("CanvasRenderer – typeof Uint8ClampedArray check", () => {
+    // The original code had: typeof Uint8ClampedArray !== undefined
+    // This compares a string ("object"/"function"/"undefined") to the
+    // undefined VALUE, which is always true (string !== undefined).
+    // The fix: typeof Uint8ClampedArray !== "undefined"
+
+    // Verify the fix works correctly for existing types
+    let use8Clamp = false;
+    try {
+        use8Clamp = (typeof Uint8ClampedArray !== "undefined");
+    } catch (e) { }
+    assert(use8Clamp === true, "Uint8ClampedArray is detected in Node.js (string comparison)");
+
+    // Verify the bug: original code always evaluates to true
+    let buggyResult = (typeof Uint8ClampedArray !== undefined);
+    assert(buggyResult === true, "Bug demo: comparing typeof to undefined VALUE is always true");
+
+    // Verify string comparison correctly returns false for non-existent globals
+    let missingType = (typeof (globalThis as any).__NonExistentType123__ !== "undefined");
+    assert(missingType === false, "String comparison correctly returns false for non-existent type");
+});
+
+// ─── Tests for WebGLDrawCmdManager removeDrawData ─────────────────────────────
+
+describe("WebGLDrawCmdManager – removeDrawData preserves pool objects", () => {
+    // Simulate a drawData array with pre-allocated objects (like the real pool)
+    const POOL_SIZE = 8;
+    const drawData: any[] = [];
+    for (let i = 0; i < POOL_SIZE; i++) {
+        drawData[i] = { type: 0, id: i }; // id to track identity
+    }
+
+    let drawDataLen = 5; // Only first 5 are "active"
+    const originalArrayLength = drawData.length;
+
+    // Simulate removeDrawData(2) - remove element at index 2
+    function removeDrawData(index: number): void {
+        let removed = drawData[index];
+        for (let j = index; j < drawDataLen - 1; j++) {
+            drawData[j] = drawData[j + 1];
+        }
+        drawData[drawDataLen - 1] = removed;
+        drawDataLen--;
+    }
+
+    removeDrawData(2);
+
+    assert(drawDataLen === 4, "Active length decreased by 1");
+    assert(drawData.length === originalArrayLength, "Array.length unchanged (pool preserved)");
+    assert(drawData[0].id === 0, "Element 0 unchanged");
+    assert(drawData[1].id === 1, "Element 1 unchanged");
+    assert(drawData[2].id === 3, "Element 2 is now what was at index 3 (shifted forward)");
+    assert(drawData[3].id === 4, "Element 3 is now what was at index 4 (shifted forward)");
+    assert(drawData[4].id === 2, "Removed element moved to end of active range (reusable)");
+    assert(drawData[7] !== undefined, "Pool slot beyond active range preserved");
+});
+
+// ─── Tests for geom pool capacity limits ──────────────────────────────────────
+
+describe("Matrix/Point/Rectangle pool – capacity limits", () => {
+    // Simulate the capped pool pattern
+    const POOL_MAX_SIZE = 256;
+    let pool: any[] = [];
+
+    function release(obj: any): void {
+        if (!obj) { return; }
+        if (pool.length < POOL_MAX_SIZE) {
+            pool.push(obj);
+        }
+    }
+
+    // Fill pool to capacity
+    for (let i = 0; i < POOL_MAX_SIZE; i++) {
+        release({ id: i });
+    }
+    assert(pool.length === POOL_MAX_SIZE, `Pool reaches max capacity (${POOL_MAX_SIZE})`);
+
+    // Excess releases are silently dropped
+    release({ id: 999 });
+    assert(pool.length === POOL_MAX_SIZE, "Pool does not exceed max capacity");
+
+    // Null/undefined releases are no-ops
+    let prevLen = pool.length;
+    release(null);
+    release(undefined);
+    assert(pool.length === prevLen, "Null/undefined releases are safely ignored");
+});
+
+// ─── Tests for EgretWebGLProgram deleteProgram ────────────────────────────────
+
+describe("EgretWebGLProgram – deleteProgram implementation", () => {
+    // Simulate the program cache and deletion logic
+    const programCache: any = {};
+    let deletedShaders: any[] = [];
+    let deletedPrograms: any[] = [];
+
+    // Mock GL context
+    const gl = {
+        deleteShader(shader: any) { deletedShaders.push(shader); },
+        deleteProgram(program: any) { deletedPrograms.push(program); }
+    };
+
+    // Simulate cached program
+    const mockProgram = {
+        vertexShader: { id: "vs" },
+        fragmentShader: { id: "fs" },
+        id: { id: "prog" }
+    };
+    programCache["test-key"] = mockProgram;
+
+    // Simulate deleteProgram logic
+    function deleteProgram(gl: any, key: string): void {
+        let program = programCache[key];
+        if (program) {
+            gl.deleteShader(program.vertexShader);
+            gl.deleteShader(program.fragmentShader);
+            gl.deleteProgram(program.id);
+            delete programCache[key];
+        }
+    }
+
+    deleteProgram(gl, "test-key");
+
+    assert(deletedShaders.length === 2, "Both shaders deleted");
+    assert(deletedShaders[0] === mockProgram.vertexShader, "Vertex shader deleted");
+    assert(deletedShaders[1] === mockProgram.fragmentShader, "Fragment shader deleted");
+    assert(deletedPrograms.length === 1, "Program deleted");
+    assert(deletedPrograms[0] === mockProgram.id, "Correct program deleted");
+    assert(programCache["test-key"] === undefined, "Program removed from cache");
+
+    // Deleting non-existent key is a no-op
+    deletedShaders = [];
+    deletedPrograms = [];
+    deleteProgram(gl, "non-existent");
+    assert(deletedShaders.length === 0, "No shaders deleted for non-existent key");
+    assert(deletedPrograms.length === 0, "No programs deleted for non-existent key");
 });
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
