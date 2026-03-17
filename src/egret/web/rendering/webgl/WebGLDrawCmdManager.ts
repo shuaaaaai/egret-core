@@ -96,6 +96,22 @@ namespace egret.web {
         }
 
         /**
+         * Order-preserving removal of an active draw data entry.
+         * Unlike Array.splice(), this does not shrink the underlying
+         * array, preserving pre-allocated pool slots beyond drawDataLen.
+         */
+        private removeDrawData(index: number): void {
+            let removed = this.drawData[index];
+            for (let j = index; j < this.drawDataLen - 1; j++) {
+                this.drawData[j] = this.drawData[j + 1];
+            }
+            // Move the removed object to the now-unused slot so it stays
+            // in the pool for future reuse instead of being lost.
+            this.drawData[this.drawDataLen - 1] = removed;
+            this.drawDataLen--;
+        }
+
+        /**
          * 压入绘制矩形指令
          */
         public pushDrawRect():void {
@@ -189,8 +205,7 @@ namespace egret.web {
 
                     // 如果与上一次blend操作之间无有效绘图，上一次操作无效
                     if(!drawState && data.type == DRAWABLE_TYPE.BLEND) {
-                        this.drawData.splice(i, 1);
-                        this.drawDataLen--;
+                        this.removeDrawData(i);
                         continue;
                     }
 
@@ -252,8 +267,7 @@ namespace egret.web {
 
                     // 如果与上一次buffer操作之间无有效绘图，上一次操作无效
                     if(!drawState && data.type == DRAWABLE_TYPE.ACT_BUFFER) {
-                        this.drawData.splice(i, 1);
-                        this.drawDataLen--;
+                        this.removeDrawData(i);
                         continue;
                     }
 

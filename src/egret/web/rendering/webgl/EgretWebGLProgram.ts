@@ -38,8 +38,10 @@ namespace egret.web {
 
         let compiled = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
         if(!compiled) {
-            console.log("shader not compiled!");
-            console.log(gl.getShaderInfoLog(shader));
+            if (DEBUG) {
+                egret.warn("shader not compiled!");
+                egret.warn(gl.getShaderInfoLog(shader));
+            }
         }
 
         return shader;
@@ -122,7 +124,13 @@ namespace egret.web {
         }
 
         public static deleteProgram(gl:WebGLRenderingContext, vertSource:string, fragSource:string, key:string):void {
-            // TODO delete
+            let program = this.programCache[key];
+            if (program) {
+                gl.deleteShader(program.vertexShader);
+                gl.deleteShader(program.fragmentShader);
+                gl.deleteProgram(program.id);
+                delete this.programCache[key];
+            }
         }
  
         private vshaderSource:string;

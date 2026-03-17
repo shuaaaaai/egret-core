@@ -31,6 +31,7 @@
 namespace egret {
 
     let rectanglePool:Rectangle[] = [];
+    const RECTANGLE_POOL_MAX_SIZE:number = 256;
     /**
      * A Rectangle object is an area defined by its position, as indicated by its top-left corner point (x, y) and by its
      * width and its height.<br/>
@@ -71,7 +72,9 @@ namespace egret {
             if (!rect) {
                 return;
             }
-            rectanglePool.push(rect);
+            if (rectanglePool.length < RECTANGLE_POOL_MAX_SIZE) {
+                rectanglePool.push(rect);
+            }
         }
 
         /**

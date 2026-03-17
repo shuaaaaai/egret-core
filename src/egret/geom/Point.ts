@@ -31,6 +31,7 @@
 namespace egret {
 
     let pointPool:Point[] = [];
+    const POINT_POOL_MAX_SIZE:number = 256;
     let DEG_TO_RAD:number = Math.PI / 180;
 
     /**
@@ -66,7 +67,9 @@ namespace egret {
             if(!point){
                 return;
             }
-            pointPool.push(point);
+            if (pointPool.length < POINT_POOL_MAX_SIZE) {
+                pointPool.push(point);
+            }
         }
 
         /**
